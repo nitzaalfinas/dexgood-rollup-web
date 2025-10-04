@@ -4,25 +4,8 @@ import WhyUsSection from "@/components/home/WhyUs";
 import NavBar from "@/components/layouts/NavBar";
 import Footer from "@/components/layouts/Footer";
 import { Box } from "@mui/material";
-import { useEffect, useState } from "react";
-
-const DOMAIN_EVM = import.meta.env.VITE_DOMAIN_EVM;
 
 const HomePage = () => {
-  const [, setMarkets] = useState([]);
-
-  useEffect(() => {
-    const fetchMarkets = async () => {
-      try {
-        const response = await fetch(`${DOMAIN_EVM}/markets`);
-        const data = await response.json();
-        setMarkets((data || []).slice(0, 6)); // Ambil 6 market pertama
-      } catch (error) {
-        setMarkets([]);
-      }
-    };
-    fetchMarkets();
-  }, []);
 
   return (
     <>

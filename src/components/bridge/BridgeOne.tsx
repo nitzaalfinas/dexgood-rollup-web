@@ -1,9 +1,9 @@
 // Maksudnya adalah Bridge dari L1 ke L2
 import React, { useState, useEffect } from 'react';
-import { useAccount, useSwitchChain } from 'wagmi';
+import { useAccount, useSwitchChain, useWriteContract, useWaitForTransactionReceipt } from 'wagmi';
 import { formatEther, parseUnits, formatUnits } from 'viem';
 import { bridgeConfig } from '@/config/bridge';
-import { BridgeToken, getNativeTokenForChain, getTokenAddress, isTokenAvailableOnChain } from '@/config/tokens';
+import { BridgeToken, getNativeTokenForChain, getTokenAddress } from '@/config/tokens';
 import { useTokenBalance, useTokenAllowance, useTokenApproval } from '@/hooks/useTokens';
 import Button from '../ui/Button';
 import ModalConnectWallet from '../navbar/ModalConnectWallet';
@@ -35,6 +35,7 @@ const BridgeOne: React.FC<BridgeProps> = ({ className = '' }) => {
   const [showConnectModal, setShowConnectModal] = useState(false);
   const [isTermsAccepted, setIsTermsAccepted] = useState(false);
   const [needsApproval, setNeedsApproval] = useState(false);
+  const [isApproved, setIsApproved] = useState(false);
 
   const { address, isConnected, chain } = useAccount();
   const { switchChain } = useSwitchChain();
@@ -47,7 +48,8 @@ const BridgeOne: React.FC<BridgeProps> = ({ className = '' }) => {
   );
 
   // Token approval hooks (only for ERC-20 tokens)
-  const bridgeContractAddress = '0x1234567890123456789012345678901234567890' as `0x${string}`; // Replace with actual bridge contract
+  const bridgeContractAddress = (import.meta.env.VITE_L1_BRIDGE_CONTRACT || '') as `0x${string}`; // Ambil dari .env
+
   const { data: allowance, refetch: refetchAllowance } = useTokenAllowance(
     fromToken,
     address,
@@ -55,6 +57,12 @@ const BridgeOne: React.FC<BridgeProps> = ({ className = '' }) => {
     fromChain.id
   );
   const { approve, isPending: isApproving, isSuccess: isApprovalSuccess } = useTokenApproval();
+
+  // Smart contract interaction hooks
+  const { writeContract, isPending: isDepositPending, error: depositError, data: depositTxData } = useWriteContract();
+  const { isLoading: isDepositConfirming, isSuccess: isDepositSuccess } = useWaitForTransactionReceipt({
+    hash: depositTxData,
+  });
 
   const handleFromTokenSelect = (token: BridgeToken) => {
     setFromToken(token);
@@ -95,12 +103,102 @@ const BridgeOne: React.FC<BridgeProps> = ({ className = '' }) => {
       const tokenAddress = getTokenAddress(fromToken, fromChain.id);
       if (tokenAddress) {
         const amountToApprove = parseUnits(amount, fromToken.decimals);
-        approve(tokenAddress as `0x${string}`, bridgeContractAddress, amountToApprove);
+        await approve(tokenAddress as `0x${string}`, bridgeContractAddress, amountToApprove);
       }
     }
   };
 
-  const handleBridge = async () => {
+  // Bridge L1 ABI - Simplified version
+  const BRIDGE_L1_ABI = [
+    {
+      name: 'depositETH',
+      type: 'function',
+      stateMutability: 'payable',
+      inputs: [],
+      outputs: []
+    },
+    {
+      name: 'depositERC20',
+      type: 'function',
+      stateMutability: 'nonpayable',
+      inputs: [
+        { name: 'token', type: 'address' },
+        { name: 'amount', type: 'uint256' }
+      ],
+      outputs: []
+    },
+    {
+      anonymous: false,
+      inputs: [
+        { indexed: true, name: 'depositId', type: 'uint256' },
+        { indexed: true, name: 'user', type: 'address' },
+        { indexed: false, name: 'amount', type: 'uint256' },
+        { indexed: false, name: 'timestamp', type: 'uint256' }
+      ],
+      name: 'DepositETH',
+      type: 'event'
+    },
+    {
+      anonymous: false,
+      inputs: [
+        { indexed: true, name: 'depositId', type: 'uint256' },
+        { indexed: true, name: 'user', type: 'address' },
+        { indexed: true, name: 'token', type: 'address' },
+        { indexed: false, name: 'amount', type: 'uint256' },
+        { indexed: false, name: 'timestamp', type: 'uint256' }
+      ],
+      name: 'DepositERC20',
+      type: 'event'
+    }
+  ] as const;
+
+  const handleDeposit = async () => {
+    try {
+      if (!amount || !address) {
+        alert('Invalid amount or address');
+        return;
+      }
+
+      if (!bridgeContractAddress) {
+        alert('Bridge contract address not configured');
+        return;
+      }
+
+      const amountInWei = parseUnits(amount, fromToken.decimals);
+
+      if (fromToken.isNative) {
+        // Deposit native ETH
+        await writeContract({
+          address: bridgeContractAddress,
+          abi: BRIDGE_L1_ABI,
+          functionName: 'depositETH',
+          value: amountInWei,
+        });
+        console.log('ETH Deposit transaction initiated');
+      } else {
+        // Deposit ERC20 token
+        const tokenAddress = getTokenAddress(fromToken, fromChain.id);
+        if (!tokenAddress) {
+          alert('Token address not found');
+          return;
+        }
+
+        await writeContract({
+          address: bridgeContractAddress,
+          abi: BRIDGE_L1_ABI,
+          functionName: 'depositERC20',
+          args: [tokenAddress as `0x${string}`, amountInWei],
+        });
+        console.log('ERC20 Deposit transaction initiated');
+      }
+    } catch (error: any) {
+      console.error('Deposit error:', error);
+      const errorMessage = error?.message || error?.reason || 'Unknown error';
+      alert(`Deposit failed: ${errorMessage}`);
+    }
+  };
+
+  const handleMainAction = async () => {
     if (!isConnected) {
       setShowConnectModal(true);
       return;
@@ -116,7 +214,7 @@ const BridgeOne: React.FC<BridgeProps> = ({ className = '' }) => {
       return;
     }
 
-    // Check if we're on the correct chain
+    // Check if we're on the correct chain (L1)
     if (chain?.id !== fromChain.id) {
       try {
         await switchChain({ chainId: fromChain.id });
@@ -126,32 +224,26 @@ const BridgeOne: React.FC<BridgeProps> = ({ className = '' }) => {
       }
     }
 
-    // Check if approval is needed for ERC-20 tokens
+    // Step 1: If ERC-20 token needs approval, do approval first
     if (!fromToken.isNative && needsApproval) {
-      handleApprove();
+      await handleApprove();
       return;
     }
 
-    // Here you would implement the actual bridge logic
-    console.log('Bridging:', {
-      amount,
-      token: fromToken.symbol,
-      from: fromChain.name,
-      to: toChain.name,
-      address,
-    });
-    
-    // For now, just show an alert
-    alert(`Bridge ${amount} ${fromToken.symbol} from ${fromChain.name} to ${toChain.name}`);
+    // Step 2: If approved or native token, proceed with deposit
+    await handleDeposit();
   };
 
   // Check if approval is needed
   useEffect(() => {
-    if (!fromToken.isNative && amount && allowance !== undefined) {
+    if (!fromToken.isNative && amount && allowance !== undefined && allowance !== null) {
       const amountBigInt = parseUnits(amount, fromToken.decimals);
-      setNeedsApproval(allowance < amountBigInt);
+      const allowanceBigInt = BigInt(allowance.toString());
+      setNeedsApproval(allowanceBigInt < amountBigInt);
+      setIsApproved(allowanceBigInt >= amountBigInt);
     } else {
       setNeedsApproval(false);
+      setIsApproved(fromToken.isNative); // native token tidak perlu approve
     }
   }, [fromToken, amount, allowance]);
 
@@ -161,6 +253,17 @@ const BridgeOne: React.FC<BridgeProps> = ({ className = '' }) => {
       refetchAllowance();
     }
   }, [isApprovalSuccess, refetchAllowance]);
+
+  // Reset form after successful deposit
+  useEffect(() => {
+    if (isDepositSuccess) {
+      // Reset form after 3 seconds
+      const timer = setTimeout(() => {
+        setAmount('');
+      }, 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [isDepositSuccess]);
 
   const formatBalance = (balance: bigint | undefined) => {
     if (!balance) return '0';
@@ -323,6 +426,50 @@ const BridgeOne: React.FC<BridgeProps> = ({ className = '' }) => {
         </div>
       </div>
 
+      {/* Bridge Process Steps Indicator */}
+      {isConnected && isAmountValid && (
+        <div className="mb-4 p-3 bg-gray-700/30 rounded-lg border border-gray-600/30">
+          <div className="text-sm text-gray-300 mb-2">Bridge Process:</div>
+          <div className="flex items-center gap-4">
+            {/* Step 1: Token Selection */}
+            <div className="flex items-center gap-2">
+              <div className="w-5 h-5 bg-green-500 rounded-full flex items-center justify-center">
+                <span className="text-xs text-white">✓</span>
+              </div>
+              <span className="text-xs text-gray-300">Token Selected</span>
+            </div>
+            
+            {/* Step 2: Approval (if needed) */}
+            {!fromToken.isNative && (
+              <div className="flex items-center gap-2">
+                <div className={`w-5 h-5 rounded-full flex items-center justify-center ${
+                  isApproved ? 'bg-green-500' : needsApproval ? 'bg-yellow-500' : 'bg-gray-500'
+                }`}>
+                  <span className="text-xs text-white">
+                    {isApproved ? '✓' : isApproving ? '...' : '2'}
+                  </span>
+                </div>
+                <span className="text-xs text-gray-300">
+                  {isApproved ? 'Approved' : 'Approve Token'}
+                </span>
+              </div>
+            )}
+            
+            {/* Step 3: Deposit */}
+            <div className="flex items-center gap-2">
+              <div className={`w-5 h-5 rounded-full flex items-center justify-center ${
+                (fromToken.isNative || isApproved) ? 'bg-blue-500' : 'bg-gray-500'
+              }`}>
+                <span className="text-xs text-white">
+                  {fromToken.isNative ? '2' : '3'}
+                </span>
+              </div>
+              <span className="text-xs text-gray-300">Deposit to L1</span>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Terms and Conditions */}
       <div className="mb-6">
         <label className="flex items-start gap-3 cursor-pointer">
@@ -341,26 +488,70 @@ const BridgeOne: React.FC<BridgeProps> = ({ className = '' }) => {
         </label>
       </div>
 
-      {/* Bridge Button */}
+      {/* Bridge Button - Step by Step Process */}
       <Button
-        onClick={handleBridge}
-        disabled={!isAmountValid || hasInsufficientBalance || (isConnected && !isTermsAccepted) || isApproving}
+        onClick={handleMainAction}
+        disabled={
+          !isAmountValid ||
+          hasInsufficientBalance ||
+          (isConnected && !isTermsAccepted) ||
+          isApproving ||
+          isDepositPending ||
+          isDepositConfirming
+        }
         className="w-full py-4 text-lg font-semibold"
         variant={hasInsufficientBalance ? "danger" : "primary"}
       >
-        {!isConnected 
+        {!isConnected
           ? "Connect Wallet"
-          : hasInsufficientBalance 
+          : hasInsufficientBalance
             ? "Insufficient Balance"
             : !isAmountValid
               ? "Enter Amount"
-              : isApproving
-                ? "Approving..."
+              : !isTermsAccepted
+                ? "Accept Terms to Continue"
                 : needsApproval && !fromToken.isNative
-                  ? `Approve ${fromToken.symbol}`
-                  : `Bridge to ${toChain.name}`
+                  ? isApproving
+                    ? "Approving..."
+                    : `Step 1: Approve ${fromToken.symbol}`
+                  : isDepositPending
+                    ? "Confirming Deposit..."
+                    : isDepositConfirming
+                      ? "Processing Transaction..."
+                      : isDepositSuccess
+                        ? "Deposit Successful!"
+                        : `Step 2: Deposit to L1`
         }
       </Button>
+
+      {/* Deposit Status Messages */}
+      {depositError && (
+        <div className="mb-4 p-3 bg-red-900/30 border border-red-500/50 rounded-lg">
+          <div className="text-sm text-red-300">
+            Deposit Error: {depositError.message}
+          </div>
+        </div>
+      )}
+
+      {isDepositSuccess && (
+        <div className="mb-4 p-3 bg-green-900/30 border border-green-500/50 rounded-lg">
+          <div className="text-sm text-green-300">
+            ✅ Deposit successful! Your funds will be available on L2 shortly.
+            {depositTxData && (
+              <div className="mt-2">
+                <a 
+                  href={`https://sepolia.etherscan.io/tx/${depositTxData}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-green-400 hover:text-green-300 underline"
+                >
+                  View on Etherscan
+                </a>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Connect Wallet Modal */}
       <ModalConnectWallet

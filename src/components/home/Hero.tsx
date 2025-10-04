@@ -1,25 +1,8 @@
 import ArrowForwardIcon from "@mui/icons-material/ArrowForward";
-// import Button from "../ui/Button"; // Unused import
-import { useEffect, useState } from "react";
-import { DOMAIN_EVM } from "@/config/env";
-import { Market } from "@/type/market";
 import { useNavigate } from "react-router-dom";
 
 const HeroSection = () => {
   const navigate = useNavigate();
-
-  const [firstMarket, setFirstMarket] = useState<Market | null>(null);
-
-  useEffect(() => {
-    fetch(`${DOMAIN_EVM}/markets`)
-      .then((res) => res.json())
-      .then((data: Market[]) => {
-        if (Array.isArray(data) && data.length > 0) {
-          setFirstMarket(data[0]);
-        }
-      })
-      .catch(() => setFirstMarket(null));
-  }, [DOMAIN_EVM]);
 
   return (
     <section className="relative w-screen min-h-[600px] md:min-h-[700px] lg:min-h-[800px] bg-[url('/img/landing/hero-background-05.jpg')] bg-cover bg-center bg-no-repeat flex items-center justify-center overflow-hidden">
@@ -56,15 +39,11 @@ const HeroSection = () => {
           {/* CTA Buttons */}
           <div className="flex flex-col sm:flex-row gap-4 justify-center items-center mt-8 animate-fadeInUp delay-700">
             <button
-              onClick={() =>
-                navigate(
-                  `/trade/${firstMarket?.chain_id}/${firstMarket?.sc_address}/${firstMarket?.market_id_bc}`
-                )
-              }
+              onClick={() => navigate('/bridge')}
               className="group relative px-6 py-3 bg-gradient-to-r from-main to-orange-500 text-white font-medium rounded-full overflow-hidden transition-all duration-300 hover:cursor-pointer hover:shadow-2xl hover:shadow-main/25 hover:scale-105"
             >
               <span className="relative z-10 flex items-center gap-2 text-lg tracking-wider">
-                Trade Now
+                Use Bridge
                 <ArrowForwardIcon className="w-5 h-5 group-hover:translate-x-1 transition-transform duration-200" />
               </span>
               <div className="absolute inset-0 bg-gradient-to-r from-orange-500 to-main opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>

@@ -1,16 +1,11 @@
 import { useEffect, useState } from "react";
 import { NavLink, useNavigate, useLocation } from "react-router-dom";
-import { DOMAIN_EVM } from "@/config/env";
 import { useAccount } from "wagmi";
 import { shortenAddress } from "@/utils/formatter";
 import Button from "../ui/Button";
-import type { Market } from "@/type/market";
-import CreateMarketModal from "../modals/CreateMarketModal";
 import ModalNavbar from "@/components/ui/Modal";
 import MenuIcon from "@mui/icons-material/Menu";
 import HomeIcon from "@mui/icons-material/Home";
-import TrendingUpIcon from "@mui/icons-material/TrendingUp";
-import ListAltIcon from "@mui/icons-material/ListAlt";
 import ModalConnectWallet from "../navbar/ModalConnectWallet";
 import MessageBox from "../ui/MessageBox";
 
@@ -24,19 +19,12 @@ const Navbar = ({ static: isStatic = false, className = "" }: NavbarProps) => {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const [firstMarket, setFirstMarket] = useState<Market | null>(null);
   const [openModalConnectWallet, setOpenModalConnectWallet] = useState(false);
-  const [openCreateMarket, setOpenCreateMarket] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const [openModalNavbar, setOpenModalNavbar] = useState(false);
 
   // Check if current page is home
   const isHomePage = location.pathname === "/";
-
-  const handleSelectMarketType = (type: number) => {
-    setOpenCreateMarket(false);
-    navigate(`/create-market?mtipe=${type}`);
-  };
 
   // Handle scroll effect only on home page
   useEffect(() => {
@@ -58,16 +46,7 @@ const Navbar = ({ static: isStatic = false, className = "" }: NavbarProps) => {
     return () => window.removeEventListener("scroll", handleScroll);
   }, [isHomePage]);
 
-  useEffect(() => {
-    fetch(`${DOMAIN_EVM}/markets`)
-      .then((res) => res.json())
-      .then((data: Market[]) => {
-        if (Array.isArray(data) && data.length > 0) {
-          setFirstMarket(data[0]);
-        }
-      })
-      .catch(() => setFirstMarket(null));
-  }, [DOMAIN_EVM]);
+
 
   return (
     <>

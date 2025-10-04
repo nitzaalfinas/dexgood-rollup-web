@@ -63,14 +63,7 @@ const Footer = () => {
           <div className="space-y-4">
             <h3 className="text-lg font-semibold">Products</h3>
             <ul className="space-y-2">
-              <li>
-                <Link
-                  to="/markets"
-                  className="text-gray-400 hover:text-white transition-colors duration-200 text-sm"
-                >
-                  Markets
-                </Link>
-              </li>
+
               <li>
                 <Link
                   to="/trade"
@@ -192,7 +185,7 @@ const Footer = () => {
           <div className="max-w-md mx-auto text-center lg:text-left lg:mx-0">
             <h3 className="text-lg font-semibold mb-3">Stay Updated</h3>
             <p className="text-gray-400 text-sm mb-4">
-              Get the latest updates on new markets and trading opportunities.
+              Get the latest updates on bridge functionality and platform news.
             </p>
             <div className="flex flex-col sm:flex-row gap-3">
               <input
