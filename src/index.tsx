@@ -6,6 +6,7 @@ import { WagmiProvider } from "wagmi";
 import { BrowserRouter } from "react-router-dom";
 import App from "./App.tsx";
 import { config } from "./wagmi.ts";
+import { logEnvironmentConfig } from "./config/env.ts";
 import "./index.css";
 import { StyledEngineProvider } from "@mui/material/styles";
 import GlobalStyles from "@mui/material/GlobalStyles";
@@ -15,6 +16,9 @@ import "@fontsource/roboto/500.css";
 import "@fontsource/roboto/700.css";
 
 globalThis.Buffer = Buffer;
+
+// Log environment configuration on startup
+logEnvironmentConfig();
 
 const queryClient = new QueryClient();
 

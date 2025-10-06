@@ -4,6 +4,7 @@ import { CssBaseline } from "@mui/material";
 import AppTheme from "./theme/AppTheme";
 
 import HomePage from "@/pages/Home";
+import DebugPage from "@/pages/Debug";
 
 import "@fontsource/roboto/300.css";
 import "@fontsource/roboto/400.css";
@@ -27,6 +28,7 @@ const App = (props: { disableCustomTheme?: boolean }) => (
       <Routes>
         {/* Public */}
         <Route path="/" element={<HomePage />} />
+        <Route path="/debug" element={<DebugPage />} />
         {/* 404 */}
         <Route path="*" element={<div>Halaman tidak ditemukan</div>} />
       </Routes>

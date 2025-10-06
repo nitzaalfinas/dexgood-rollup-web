@@ -1,4 +1,4 @@
-// Maksudnya adalah Bridge dari L1 ke L2
+// Bridge dari L2 ke L1 (Withdraw)
 import React, { useState, useEffect } from 'react';
 import { useAccount, useSwitchChain, useWriteContract, useWaitForTransactionReceipt } from 'wagmi';
 import { formatEther, parseUnits, formatUnits } from 'viem';
@@ -8,8 +8,6 @@ import { useTokenBalance, useTokenAllowance, useTokenApproval } from '@/hooks/us
 import Button from '../ui/Button';
 import ModalConnectWallet from '../navbar/ModalConnectWallet';
 import TokenSelector from './TokenSelector';
-// Import chains from config if needed
-// import { getL1Chain, getL2Chain } from '../../config/chains';
 
 // Simple SVG Icon Component
 const ArrowUpDownIcon = ({ className }: { className: string }) => (
@@ -18,21 +16,21 @@ const ArrowUpDownIcon = ({ className }: { className: string }) => (
   </svg>
 );
 
-interface BridgeProps {
+interface BridgeTwoProps {
   className?: string;
-  onSwapDirection?: () => void; // Function to switch to BridgeTwo
+  onSwapDirection?: () => void; // Function to switch to BridgeOne
 }
 
-const BridgeOne: React.FC<BridgeProps> = ({ className = '', onSwapDirection }) => {
-  // Initialize chains from config
-  const L1_CHAIN = bridgeConfig.chains.from;
-  const L2_CHAIN = bridgeConfig.chains.to;
+const BridgeTwo: React.FC<BridgeTwoProps> = ({ className = '', onSwapDirection }) => {
+  // Initialize chains from config (swapped for L2->L1)
+  const L2_CHAIN = bridgeConfig.chains.to; // L2 as source
+  const L1_CHAIN = bridgeConfig.chains.from; // L1 as destination
 
   const [amount, setAmount] = useState('');
-  const [fromChain, setFromChain] = useState(L1_CHAIN);
-  const [toChain, setToChain] = useState(L2_CHAIN);
-  const [fromToken, setFromToken] = useState<BridgeToken>(getNativeTokenForChain(L1_CHAIN.id));
-  const [toToken, setToToken] = useState<BridgeToken>(getNativeTokenForChain(L2_CHAIN.id));
+  const [fromChain, setFromChain] = useState(L2_CHAIN);
+  const [toChain, setToChain] = useState(L1_CHAIN);
+  const [fromToken, setFromToken] = useState<BridgeToken>(getNativeTokenForChain(L2_CHAIN.id));
+  const [toToken, setToToken] = useState<BridgeToken>(getNativeTokenForChain(L1_CHAIN.id));
   const [showConnectModal, setShowConnectModal] = useState(false);
   const [isTermsAccepted, setIsTermsAccepted] = useState(false);
   const [needsApproval, setNeedsApproval] = useState(false);
@@ -41,28 +39,28 @@ const BridgeOne: React.FC<BridgeProps> = ({ className = '', onSwapDirection }) =
   const { address, isConnected, chain } = useAccount();
   const { switchChain } = useSwitchChain();
   
-  // Get token balance for the current chain
+  // Get token balance for L2 chain
   const { data: balance } = useTokenBalance(
     fromToken,
     address,
     fromChain.id
   );
 
-  // Token approval hooks (only for ERC-20 tokens)
-  const bridgeContractAddress = (import.meta.env.VITE_L1_BRIDGE_CONTRACT || '') as `0x${string}`;
+  // Token approval hooks (only for ERC-20 tokens on L2)
+  const bridgeL2ContractAddress = (import.meta.env.VITE_L2_BRIDGE_CONTRACT || '') as `0x${string}`;
 
   const { data: allowance, refetch: refetchAllowance } = useTokenAllowance(
     fromToken,
     address,
-    bridgeContractAddress,
+    bridgeL2ContractAddress,
     fromChain.id
   );
   const { approve, isPending: isApproving, isSuccess: isApprovalSuccess } = useTokenApproval();
 
   // Smart contract interaction hooks
-  const { writeContract, isPending: isDepositPending, error: depositError, data: depositTxData } = useWriteContract();
-  const { isLoading: isDepositConfirming, isSuccess: isDepositSuccess } = useWaitForTransactionReceipt({
-    hash: depositTxData,
+  const { writeContract, isPending: isWithdrawPending, error: withdrawError, data: withdrawTxData } = useWriteContract();
+  const { isLoading: isWithdrawConfirming, isSuccess: isWithdrawSuccess } = useWaitForTransactionReceipt({
+    hash: withdrawTxData,
   });
 
   const handleFromTokenSelect = (token: BridgeToken) => {
@@ -74,18 +72,20 @@ const BridgeOne: React.FC<BridgeProps> = ({ className = '', onSwapDirection }) =
   };
 
   const handleSwapChains = () => {
-    // Call parent function to switch to BridgeTwo
+    // Call parent function to switch to BridgeOne
     if (onSwapDirection) {
       onSwapDirection();
     }
-  };  const handleMaxClick = () => {
+  };
+
+  const handleMaxClick = () => {
     if (balance) {
       let maxAmount: number;
       
       if (fromToken.isNative) {
-        // Reserve some native token for gas fees
+        // Reserve some native token for gas fees on L2
         maxAmount = parseFloat(formatEther(balance));
-        const reserveForGas = 0.01; // Reserve 0.01 for gas
+        const reserveForGas = 0.001; // Reserve less on L2 (cheaper gas)
         maxAmount = Math.max(0, maxAmount - reserveForGas);
       } else {
         // For ERC-20 tokens, use full balance
@@ -96,31 +96,33 @@ const BridgeOne: React.FC<BridgeProps> = ({ className = '', onSwapDirection }) =
     }
   };
 
-    const handleApprove = async () => {
+  const handleApprove = async () => {
     if (!fromToken.isNative && amount) {
       const tokenAddress = getTokenAddress(fromToken, fromChain.id);
       if (tokenAddress) {
         const amountToApprove = parseUnits(amount, fromToken.decimals);
-        await approve(tokenAddress as `0x${string}`, bridgeContractAddress, amountToApprove);
+        await approve(tokenAddress as `0x${string}`, bridgeL2ContractAddress, amountToApprove);
       }
     }
   };
 
-  // Bridge L1 ABI - Simplified version
-  const BRIDGE_L1_ABI = [
+  // Bridge L2 ABI - For withdraw functions
+  const BRIDGE_L2_ABI = [
     {
-      name: 'depositETH',
-      type: 'function',
-      stateMutability: 'payable',
-      inputs: [],
-      outputs: []
-    },
-    {
-      name: 'depositERC20',
+      name: 'withdrawETH',
       type: 'function',
       stateMutability: 'nonpayable',
       inputs: [
-        { name: 'token', type: 'address' },
+        { name: 'amount', type: 'uint256' }
+      ],
+      outputs: []
+    },
+    {
+      name: 'withdrawERC20',
+      type: 'function',
+      stateMutability: 'nonpayable',
+      inputs: [
+        { name: 'l2Token', type: 'address' },
         { name: 'amount', type: 'uint256' }
       ],
       outputs: []
@@ -128,71 +130,72 @@ const BridgeOne: React.FC<BridgeProps> = ({ className = '', onSwapDirection }) =
     {
       anonymous: false,
       inputs: [
-        { indexed: true, name: 'depositId', type: 'uint256' },
+        { indexed: true, name: 'withdrawId', type: 'uint256' },
         { indexed: true, name: 'user', type: 'address' },
         { indexed: false, name: 'amount', type: 'uint256' },
         { indexed: false, name: 'timestamp', type: 'uint256' }
       ],
-      name: 'DepositETH',
+      name: 'WithdrawETH',
       type: 'event'
     },
     {
       anonymous: false,
       inputs: [
-        { indexed: true, name: 'depositId', type: 'uint256' },
+        { indexed: true, name: 'withdrawId', type: 'uint256' },
         { indexed: true, name: 'user', type: 'address' },
-        { indexed: true, name: 'token', type: 'address' },
+        { indexed: true, name: 'l2Token', type: 'address' },
+        { indexed: true, name: 'l1Token', type: 'address' },
         { indexed: false, name: 'amount', type: 'uint256' },
         { indexed: false, name: 'timestamp', type: 'uint256' }
       ],
-      name: 'DepositERC20',
+      name: 'WithdrawERC20',
       type: 'event'
     }
   ] as const;
 
-  const handleDeposit = async () => {
+  const handleWithdraw = async () => {
     try {
       if (!amount || !address) {
         alert('Invalid amount or address');
         return;
       }
 
-      if (!bridgeContractAddress) {
-        alert('Bridge contract address not configured');
+      if (!bridgeL2ContractAddress) {
+        alert('L2 Bridge contract address not configured');
         return;
       }
 
       const amountInWei = parseUnits(amount, fromToken.decimals);
 
       if (fromToken.isNative) {
-        // Deposit native ETH
+        // Withdraw native ETH from L2
         await writeContract({
-          address: bridgeContractAddress,
-          abi: BRIDGE_L1_ABI,
-          functionName: 'depositETH',
-          value: amountInWei,
+          address: bridgeL2ContractAddress,
+          abi: BRIDGE_L2_ABI,
+          functionName: 'withdrawETH',
+          args: [amountInWei],
         });
-        console.log('ETH Deposit transaction initiated');
+        console.log('ETH Withdraw transaction initiated');
       } else {
-        // Deposit ERC20 token
-        const tokenAddress = getTokenAddress(fromToken, fromChain.id);
-        if (!tokenAddress) {
-          alert('Token address not found');
+        // Withdraw ERC20 token from L2
+        const l2TokenAddress = getTokenAddress(fromToken, fromChain.id);
+        if (!l2TokenAddress) {
+          alert('L2 Token address not found');
           return;
         }
 
         await writeContract({
-          address: bridgeContractAddress,
-          abi: BRIDGE_L1_ABI,
-          functionName: 'depositERC20',
-          args: [tokenAddress as `0x${string}`, amountInWei],
+          address: bridgeL2ContractAddress,
+          abi: BRIDGE_L2_ABI,
+          functionName: 'withdrawERC20',
+          args: [l2TokenAddress as `0x${string}`, amountInWei],
         });
-        console.log('ERC20 Deposit transaction initiated');
+        console.log('ERC20 Withdraw transaction initiated');
       }
     } catch (error: any) {
-      console.error('Deposit error:', error);
+      console.error('Withdraw error:', error);
       const errorMessage = error?.message || error?.reason || 'Unknown error';
-      alert(`Deposit failed: ${errorMessage}`);
+      alert(`Withdraw failed: ${errorMessage}`);
     }
   };
 
@@ -212,7 +215,7 @@ const BridgeOne: React.FC<BridgeProps> = ({ className = '', onSwapDirection }) =
       return;
     }
 
-    // Check if we're on the correct chain (L1)
+    // Check if we're on the correct chain (L2)
     if (chain?.id !== fromChain.id) {
       try {
         await switchChain({ chainId: fromChain.id });
@@ -228,8 +231,8 @@ const BridgeOne: React.FC<BridgeProps> = ({ className = '', onSwapDirection }) =
       return;
     }
 
-    // Step 2: If approved or native token, proceed with deposit
-    await handleDeposit();
+    // Step 2: If approved or native token, proceed with withdraw
+    await handleWithdraw();
   };
 
   // Check if approval is needed
@@ -252,16 +255,16 @@ const BridgeOne: React.FC<BridgeProps> = ({ className = '', onSwapDirection }) =
     }
   }, [isApprovalSuccess, refetchAllowance]);
 
-  // Reset form after successful deposit
+  // Reset form after successful withdraw
   useEffect(() => {
-    if (isDepositSuccess) {
+    if (isWithdrawSuccess) {
       // Reset form after 3 seconds
       const timer = setTimeout(() => {
         setAmount('');
       }, 3000);
       return () => clearTimeout(timer);
     }
-  }, [isDepositSuccess]);
+  }, [isWithdrawSuccess]);
 
   const formatBalance = (balance: bigint | undefined) => {
     if (!balance) return '0';
@@ -277,9 +280,7 @@ const BridgeOne: React.FC<BridgeProps> = ({ className = '', onSwapDirection }) =
 
   return (
     <div className={`max-w-md mx-auto bg-gray-800/50 backdrop-blur-md rounded-2xl p-6 border border-gray-700/50 ${className}`}>
-      
-
-      {/* From Section */}
+      {/* From Section - L2 */}
       <div className="mb-4">
         <div className="flex items-center justify-between mb-2">
           <span className="text-sm text-gray-400">From:</span>
@@ -292,15 +293,15 @@ const BridgeOne: React.FC<BridgeProps> = ({ className = '', onSwapDirection }) =
           <div className="bg-gray-700/50 rounded-xl p-4 border border-gray-600/50">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                {/* Chain Selector */}
+                {/* Chain Selector - L2 */}
                 <div className="flex items-center gap-2">
-                  <div className="w-6 h-6 bg-blue-500 rounded-full flex items-center justify-center">
+                  <div className="w-6 h-6 bg-blue-400 rounded-full flex items-center justify-center">
                     <span className="text-xs font-bold text-white">
-                      {import.meta.env.VITE_L1_COIN_SYMBOL?.charAt(0) || 'L1'}
+                      {import.meta.env.VITE_L2_COIN_SYMBOL?.charAt(0) || 'L2'}
                     </span>
                   </div>
                   <div className="bg-transparent text-white font-medium outline-none cursor-pointer">
-                    {import.meta.env.VITE_L1_NAME || 'L1 Network'}
+                    {import.meta.env.VITE_L2_NAME || 'L2 Network'}
                   </div>
                 </div>
                 
@@ -343,13 +344,13 @@ const BridgeOne: React.FC<BridgeProps> = ({ className = '', onSwapDirection }) =
         <button
           onClick={handleSwapChains}
           className="p-3 bg-gray-700/50 hover:bg-gray-600/50 rounded-full border border-gray-600/50 transition-colors"
-          title="Switch to L2 → L1 Bridge"
+          title="Switch to L1 → L2 Bridge"
         >
           <ArrowUpDownIcon className="w-5 h-5 text-gray-400" />
         </button>
       </div>
 
-      {/* To Section */}
+      {/* To Section - L1 */}
       <div className="mb-6">
         <div className="flex items-center justify-between mb-2">
           <span className="text-sm text-gray-400">To:</span>
@@ -361,15 +362,15 @@ const BridgeOne: React.FC<BridgeProps> = ({ className = '', onSwapDirection }) =
         <div className="bg-gray-700/50 rounded-xl p-4 border border-gray-600/50">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              {/* Chain Selector */}
+              {/* Chain Selector - L1 */}
               <div className="flex items-center gap-2">
-                <div className="w-6 h-6 bg-blue-400 rounded-full flex items-center justify-center">
+                <div className="w-6 h-6 bg-blue-500 rounded-full flex items-center justify-center">
                   <span className="text-xs font-bold text-white">
-                    {import.meta.env.VITE_L2_COIN_SYMBOL?.charAt(0) || 'L2'}
+                    {import.meta.env.VITE_L1_COIN_SYMBOL?.charAt(0) || 'L1'}
                   </span>
                 </div>
                 <div className="bg-transparent text-white font-medium outline-none cursor-pointer">
-                  {import.meta.env.VITE_L2_NAME || 'L2 Network'}
+                  {import.meta.env.VITE_L1_NAME || 'L1 Network'}
                 </div>
               </div>
               
@@ -407,10 +408,10 @@ const BridgeOne: React.FC<BridgeProps> = ({ className = '', onSwapDirection }) =
         </div>
       </div>
 
-      {/* Bridge Process Steps Indicator */}
+      {/* Withdraw Process Steps Indicator */}
       {isConnected && isAmountValid && (
         <div className="mb-4 p-3 bg-gray-700/30 rounded-lg border border-gray-600/30">
-          <div className="text-sm text-gray-300 mb-2">Bridge Process:</div>
+          <div className="text-sm text-gray-300 mb-2">Withdraw Process:</div>
           <div className="flex items-center gap-4">
             {/* Step 1: Token Selection */}
             <div className="flex items-center gap-2">
@@ -436,7 +437,7 @@ const BridgeOne: React.FC<BridgeProps> = ({ className = '', onSwapDirection }) =
               </div>
             )}
             
-            {/* Step 3: Deposit */}
+            {/* Step 3: Withdraw */}
             <div className="flex items-center gap-2">
               <div className={`w-5 h-5 rounded-full flex items-center justify-center ${
                 (fromToken.isNative || isApproved) ? 'bg-blue-500' : 'bg-gray-500'
@@ -445,11 +446,20 @@ const BridgeOne: React.FC<BridgeProps> = ({ className = '', onSwapDirection }) =
                   {fromToken.isNative ? '2' : '3'}
                 </span>
               </div>
-              <span className="text-xs text-gray-300">Deposit to L1</span>
+              <span className="text-xs text-gray-300">Withdraw from L2</span>
             </div>
           </div>
         </div>
       )}
+
+      {/* Warning Message for L2→L1 */}
+      <div className="mb-4 p-3 bg-yellow-900/30 border border-yellow-500/50 rounded-lg">
+        <div className="text-sm text-yellow-300">
+          ⚠️ <strong>L2 → L1 Withdrawal:</strong> After initiating withdrawal on L2, 
+          you'll need to manually claim your funds on L1 after the challenge period 
+          (typically 7 days on mainnet, shorter on testnet).
+        </div>
+      </div>
 
       {/* Terms and Conditions */}
       <div className="mb-6">
@@ -461,7 +471,7 @@ const BridgeOne: React.FC<BridgeProps> = ({ className = '', onSwapDirection }) =
             className="mt-1 w-4 h-4 text-blue-600 bg-gray-700 border-gray-600 rounded focus:ring-blue-500"
           />
           <span className="text-sm text-gray-400">
-            I have read and agree to the{' '}
+            I understand the withdrawal process and agree to the{' '}
             <a href="#" className="text-blue-400 hover:text-blue-300 underline">
               Terms and Conditions
             </a>
@@ -469,7 +479,7 @@ const BridgeOne: React.FC<BridgeProps> = ({ className = '', onSwapDirection }) =
         </label>
       </div>
 
-      {/* Bridge Button - Step by Step Process */}
+      {/* Withdraw Button - Step by Step Process */}
       <Button
         onClick={handleMainAction}
         disabled={
@@ -477,8 +487,8 @@ const BridgeOne: React.FC<BridgeProps> = ({ className = '', onSwapDirection }) =
           hasInsufficientBalance ||
           (isConnected && !isTermsAccepted) ||
           isApproving ||
-          isDepositPending ||
-          isDepositConfirming
+          isWithdrawPending ||
+          isWithdrawConfirming
         }
         className="w-full py-4 text-lg font-semibold"
         variant={hasInsufficientBalance ? "danger" : "primary"}
@@ -495,33 +505,41 @@ const BridgeOne: React.FC<BridgeProps> = ({ className = '', onSwapDirection }) =
                   ? isApproving
                     ? "Approving..."
                     : `Step 1: Approve ${fromToken.symbol}`
-                  : isDepositPending
-                    ? "Confirming Deposit..."
-                    : isDepositConfirming
+                  : isWithdrawPending
+                    ? "Confirming Withdrawal..."
+                    : isWithdrawConfirming
                       ? "Processing Transaction..."
-                      : isDepositSuccess
-                        ? "Deposit Successful!"
-                        : `Step 2: Deposit to L1`
+                      : isWithdrawSuccess
+                        ? "Withdrawal Initiated!"
+                        : `Step 2: Withdraw from L2`
         }
       </Button>
 
-      {/* Deposit Status Messages */}
-      {depositError && (
+      {/* Withdraw Status Messages */}
+      {withdrawError && (
         <div className="mb-4 p-3 bg-red-900/30 border border-red-500/50 rounded-lg">
           <div className="text-sm text-red-300">
-            Deposit Error: {depositError.message}
+            Withdraw Error: {withdrawError.message}
           </div>
         </div>
       )}
 
-      {isDepositSuccess && (
+      {isWithdrawSuccess && (
         <div className="mb-4 p-3 bg-green-900/30 border border-green-500/50 rounded-lg">
           <div className="text-sm text-green-300">
-            ✅ Deposit successful! Your funds will be available on L2 shortly.
-            {depositTxData && (
+            ✅ Withdrawal initiated! 
+            <div className="mt-2">
+              <strong>Next Steps:</strong>
+              <ol className="list-decimal list-inside mt-1 space-y-1">
+                <li>Wait for challenge period (typically 7 days)</li>
+                <li>Return to manually claim your funds on L1</li>
+                <li>Transaction will be available for claiming after the period</li>
+              </ol>
+            </div>
+            {withdrawTxData && (
               <div className="mt-2">
                 <a 
-                  href={`${import.meta.env.VITE_L1_EXPLORER_URL}/tx/${depositTxData}`}
+                  href={`${import.meta.env.VITE_L2_EXPLORER_URL}/tx/${withdrawTxData}`}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-green-400 hover:text-green-300 underline"
@@ -543,4 +561,4 @@ const BridgeOne: React.FC<BridgeProps> = ({ className = '', onSwapDirection }) =
   );
 };
 
-export default BridgeOne;
+export default BridgeTwo;

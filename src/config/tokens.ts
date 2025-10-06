@@ -9,58 +9,78 @@ export interface BridgeToken {
   };
 }
 
-// Define available tokens
+// Get chain IDs from environment
+const L1_CHAIN_ID = parseInt(import.meta.env.VITE_L1_CHAIN_ID || '11155111');
+const L2_CHAIN_ID = parseInt(import.meta.env.VITE_L2_CHAIN_ID || '98765432103');
+const L1_COIN_SYMBOL = import.meta.env.VITE_L1_COIN_SYMBOL || 'ETH';
+const L2_COIN_SYMBOL = import.meta.env.VITE_L2_COIN_SYMBOL || 'TDXG';
+
+// Define available tokens (dynamic based on environment)
 export const BRIDGE_TOKENS: BridgeToken[] = [
   {
-    symbol: 'ETH',
-    name: 'Ethereum',
-    icon: 'Ⓔ',
+    symbol: L1_COIN_SYMBOL,
+    name: L1_COIN_SYMBOL === 'ETH' ? 'Ethereum' : L1_COIN_SYMBOL,
+    icon: L1_COIN_SYMBOL === 'ETH' ? 'Ⓔ' : '💎',
     decimals: 18,
     isNative: true,
     addresses: {
       // Native tokens don't have contract addresses
     },
   },
-  {
-    symbol: 'USDT',
-    name: 'Tether USD',
-    icon: '₮',
-    decimals: 6,
-    isNative: false,
-    addresses: {
-      11155111: '0x7169D38820dfd117C3FA1f22a697dba58d90BA06', // Sepolia USDT
-    },
-  },
-  {
-    symbol: 'USDC',
-    name: 'USD Coin',
-    icon: '◉',
-    decimals: 6,
-    isNative: false,
-    addresses: {
-      11155111: '0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238', // Sepolia USDC
-    },
-  },
-  {
-    symbol: 'WETH',
-    name: 'Wrapped Ethereum',
-    icon: '🔷',
+  // Add wrapped version of L2 native token if different from L1
+  ...(L2_COIN_SYMBOL !== L1_COIN_SYMBOL ? [{
+    symbol: L2_COIN_SYMBOL,
+    name: L2_COIN_SYMBOL,
+    icon: '🪙',
     decimals: 18,
     isNative: false,
     addresses: {
-      11155111: '0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14', // Sepolia WETH
+      [L2_CHAIN_ID]: '0x0000000000000000000000000000000000000000', // Placeholder
     },
-  },
-  {
-    symbol: 'DAI',
-    name: 'Dai Stablecoin',
-    icon: '◈',
-    decimals: 18,
-    isNative: false,
-    addresses: {
-      11155111: '0x11fE4B6AE13d2a6055C8D9cF65c55bac32B5d844', // Sepolia DAI
+  }] : []),
+  // Common ERC-20 tokens (only on Sepolia for now)
+  ...(L1_CHAIN_ID === 11155111 ? [
+    {
+      symbol: 'USDT',
+      name: 'Tether USD',
+      icon: '₮',
+      decimals: 6,
+      isNative: false,
+      addresses: {
+        [L1_CHAIN_ID]: '0x7169D38820dfd117C3FA1f22a697dba58d90BA06',
+      },
     },
-  },
+    {
+      symbol: 'USDC',
+      name: 'USD Coin',
+      icon: '◉',
+      decimals: 6,
+      isNative: false,
+      addresses: {
+        [L1_CHAIN_ID]: '0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238',
+      },
+    },
+    {
+      symbol: 'WETH',
+      name: 'Wrapped Ethereum',
+      icon: '🔷',
+      decimals: 18,
+      isNative: false,
+      addresses: {
+        [L1_CHAIN_ID]: '0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14',
+      },
+    },
+    {
+      symbol: 'DAI',
+      name: 'Dai Stablecoin',
+      icon: '◈',
+      decimals: 18,
+      isNative: false,
+      addresses: {
+        [L1_CHAIN_ID]: '0x11fE4B6AE13d2a6055C8D9cF65c55bac32B5d844',
+      },
+    },
+  ] : []),
 ];
 
 // Get tokens available for a specific chain

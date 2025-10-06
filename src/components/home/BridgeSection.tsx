@@ -1,5 +1,5 @@
 import React from 'react';
-import BridgeOne from '../bridge/BridgeOne';
+import BridgeContainer from '../bridge/BridgeContainer';
 
 const BridgeSection: React.FC = () => {
   return (
@@ -15,7 +15,7 @@ const BridgeSection: React.FC = () => {
         </div>
         
         <div className="flex justify-center">
-          <BridgeOne className="w-full max-w-md" />
+          <BridgeContainer className="w-full max-w-md" />
         </div>
         
         {/* Info Cards */}
